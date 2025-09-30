@@ -86,7 +86,7 @@ class BrowseCompEval(Eval):
         prompt_messages = [
             self.grader_model._pack_message(content=grader_prompt, role="user")
         ]
-        sampler_response = self.grader_model(prompt_messages)
+        sampler_response = self.grader_model(grader_prompt)
         grading_response = sampler_response.response_text
 
         match = re.search(r"correct: (yes|no)", grading_response)
@@ -96,10 +96,11 @@ class BrowseCompEval(Eval):
             def fn(row: dict):
                 problem = decrypt(row.get("problem", ""), row.get("canary", ""))
                 answer = decrypt(row.get("answer", ""), row.get("canary", ""))
+                query_prompt=QUERY_TEMPLATE.format(Question=problem)
                 prompt_messages = [
-                    sampler._pack_message(content=QUERY_TEMPLATE.format(Question=problem), role="user")
+                    sampler._pack_message(content=query_prompt, role="user")
                 ]
-                sampler_response = sampler(prompt_messages)
+                sampler_response = sampler(query_prompt)
                 response_text = sampler_response.response_text
                 actual_queried_prompt_messages = sampler_response.actual_queried_message_list
 
