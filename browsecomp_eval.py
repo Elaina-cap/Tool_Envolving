@@ -88,7 +88,9 @@ class BrowseCompEval(Eval):
         ]
         sampler_response = self.grader_model(prompt_messages)
         grading_response = sampler_response.response_text
-
+        print("----------------------------------------------------------------")
+        print(grading_response)
+        print("----------------------------------------------------------------")
         match = re.search(r"correct: (yes|no)", grading_response)
         return  match.group(1) if match else "no"  # Default to "no" if no match
 
@@ -104,10 +106,11 @@ class BrowseCompEval(Eval):
                 actual_queried_prompt_messages = sampler_response.actual_queried_message_list
 
                 grade_result = self.grade_sample(problem, answer, response_text)
-                # print("----------------------------------------------------------------")
-                # print(problem)
-                # print(answer)
-                # print("----------------------------------------------------------------")
+                print("----------------------------------------------------------------")
+                print(problem)
+                print(answer)
+                print(response_text)
+                print("----------------------------------------------------------------")
                 # print("----------------------------------------------------------------")
                 # print(grade_result)
                 # print("----------------------------------------------------------------")

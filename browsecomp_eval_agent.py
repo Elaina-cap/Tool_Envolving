@@ -86,7 +86,7 @@ class BrowseCompEval(Eval):
         prompt_messages = [
             self.grader_model._pack_message(content=grader_prompt, role="user")
         ]
-        sampler_response = self.grader_model(grader_prompt)
+        sampler_response = self.grader_model(prompt_messages)
         grading_response = sampler_response.response_text
 
         match = re.search(r"correct: (yes|no)", grading_response)
@@ -100,7 +100,7 @@ class BrowseCompEval(Eval):
                 prompt_messages = [
                     sampler._pack_message(content=query_prompt, role="user")
                 ]
-                sampler_response = sampler(query_prompt)
+                sampler_response = sampler(prompt_messages)
                 response_text = sampler_response.response_text
                 actual_queried_prompt_messages = sampler_response.actual_queried_message_list
 
@@ -153,3 +153,5 @@ class BrowseCompEval(Eval):
             print(f"Accuracy: {output_d['accuracy']:.3f}")
             
             return common.aggregate_results(results)
+
+
