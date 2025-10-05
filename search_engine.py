@@ -236,16 +236,17 @@ class DDGSSearchEngine(WebSearchEngine):
         return results
 
     def run(self, query: str, num_results: int = 10) -> str:
-        print("hahahahahahahahahahahahahahahahahahahahahahahahaha")
         results = self.perform_search(query,num_results)
         # if not results:
         #     return "No results found."
-        results = [{"title":r.title,"url":r.url,"description":r.description}for r in results]
-        return results
+        # results = [{"title":r.title,"url":r.url,"description":r.description}for r in results]
+        # return results
         # if not results:
         #     return "No results found."
-        # summary = "\n".join([f"{i+1}. {r.title}\n{r.url}\n{r.description}\n" for i, r in enumerate(results)])
-        # return f"Top {len(results)} DDGS results for '{query}':\n" + summary
+        summary = "\n".join([f"{i+1}. {r.title}\n{r.url}\n{r.description}\n" for i, r in enumerate(results)])
+        with open('./search_result', 'w', encoding='utf-8') as f:
+            f.write(f"Top {len(results)} DDGS results for '{query}':\n" + summary)
+        return f"Top {len(results)} DDGS results for '{query}':\n" + summary
 
 
 
@@ -369,6 +370,6 @@ class GoogleSearchEngine(WebSearchEngine):
 # if __name__ == '__main__':
 #     asyncio.run(GoogleSearchEngine().perform_search("What is the capital of France?", num_results=5))
 
-my_search=DDGSSearchEngine()
-with open('./result','w',encoding='utf-8') as f:
-    f.write(str(my_search.run("Elaina")))
+# my_search=DDGSSearchEngine()
+# with open('./search_result','w',encoding='utf-8') as f:
+#     f.write(str(my_search.run("MMA featherweight 14 significant strikes 83 attempted 16.87% swordsman nickname")))

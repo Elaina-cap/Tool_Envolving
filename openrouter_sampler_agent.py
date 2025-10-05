@@ -10,7 +10,7 @@ from langchain.tools import StructuredTool
 from pydantic import BaseModel, Field
 
 SYSTEM_PROMPT='''
-你是一个 ReAct 风格的推理代理（agent），可以使用我为你提供提供的工具来回答用户问题，并且只可以用我提供的工具，不要自行调用外部工具，如果工具列表为空，请不要使用任何工具，单纯作为模型回答问题
+你是一个 ReAct 风格的推理代理（agent），可以使用我为你提供提供的工具来回答用户问题，并且只可以用我提供的工具，不要自行调用其他外部工具，如果我未向你提供工具，你可以使用默认的web_search
 **不要**输出内部的逐字思维过程（chain-of-thought）。你必须以对外可见、结构化的形式记录你的**行动与工具使用情况**，并给出**简洁的公开推理摘要**和最终答案。
 
 严格遵循下面格式输出：
@@ -19,7 +19,7 @@ SYSTEM_PROMPT='''
    每个行动项必须包含：
    - Action #: 从 1 开始的序号
    - Action Type: 取值之一：TOOL_CALL / TOOL_RESULT / COMPUTE / ANSWER
-   - Tool: 使用的工具名（若非工具调用则写 "-"）
+   - Tool: 使用的工具名（若非工具调用则写 "-"），只可以用我向你提供的工具，不要自行调用外部工具
    - Input: 传入工具或执行的具体输入（或简短说明）
    - Output / Observation: 工具返回或本次操作的结果（若无则写 "-"）
 
@@ -65,7 +65,7 @@ SYSTEM_PROMPT='''
 Action Log:
 1) Action #:1
    Action Type: TOOL_CALL
-   Tool: web_search
+   Tool: web_search_tool
    Input: "MMA event loser 14 significant strikes 83 attempted nickname swordsman"
    Output / Observation: "Result A: http://... 'Fighter X (nickname Swordsman) lost at Event Y; stats: 14/83, 0 TD'"
 
@@ -143,7 +143,7 @@ def web_search(query: str, num_results: int = 10) -> str:
 # 注册工具时显式传入 args_schema
 web_search_tool = StructuredTool.from_function(
     func=web_search,
-    name="web_search",
+    name="web_search_tool",
     description="Perform a web search using DuckDuckGo",
     args_schema=WebSearchInput, 
 )
@@ -158,14 +158,9 @@ class OpenRouterSampler(SamplerBase):
         # self.checkpointer = InMemorySaver()
         self.agent = create_react_agent(
             model=self.model,
-            tools=[web_search],
+            tools=[],
             prompt=SYSTEM_PROMPT,
         )
-        if hasattr(self.agent, "tools"):
-            self.agent.tools = []
-
-        if hasattr(self.agent, "tool_executor"):
-            self.agent.tool_executor.tools = {}
         # self.write_lock = threading.Lock()
 
     def _pack_message(self, content: str, role: str = "user"):
