@@ -6,8 +6,8 @@ import json
 from langgraph.prebuilt import create_react_agent
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import InMemorySaver
-import threading
-import time
+from langchain.tools import StructuredTool
+from pydantic import BaseModel, Field
 
 SYSTEM_PROMPT='''
 你是一个 ReAct 风格的推理代理（agent），可以使用我为你提供提供的工具来回答用户问题，并且只可以用我提供的工具，不要自行调用外部工具，如果工具列表为空，请不要使用任何工具，单纯作为模型回答问题
@@ -82,6 +82,72 @@ Exact Answer: Event Y
 Confidence: 85%
 '''
 
+from langchain.tools import tool
+from .search_engine import DDGSSearchEngine
+# @tool("web_search", return_direct=False)
+# def web_search(query: str, num_results: int = 10) -> str:
+#     """DuckDuckGo 网络搜索工具。"""
+#     schema={
+#         "name":"web_search",
+#         "description" :"a web search tool",
+#         "parameters": {
+#             "type": "object",
+#             "properties": {
+#                 "query": {
+#                     "type": "string",
+#                     "description": "The search query to look up on the web."
+#                 },
+#                 "num_results": {
+#                     "type": "integer",
+#                     "description": "Number of search results to retrieve (default 10).",
+#                     "default": 10,
+#                 }
+#             },
+#             "required": ["query"]
+#         },
+#         "output": {
+#             "type": "object",
+#             "properties": {
+#                 "results": {
+#                     "type": "array",
+#                     "description": "A list of search results (each containing title, url, and snippet).",
+#                     "items": {
+#                         "type": "object",
+#                         "properties": {
+#                             "title": {"type": "string", "description": "Title of the web page."},
+#                             "url": {"type": "string", "description": "Link to the web page."},
+#                             "description": {"type": "string", "description": "Short text snippet or summary."}
+#                         }
+#                     }
+#                 },
+#             }
+#         }
+#     }
+#     try:
+#         searcher = DDGSSearchEngine()
+#         return searcher.run(query,num_results)
+#     except Exception as e:
+#         return f"[web_search error] {e}"
+
+
+
+class WebSearchInput(BaseModel):
+    query: str = Field(description="The search query to look up on the web.")
+    num_results: int = Field(default=10, description="Number of search results to retrieve.")
+
+def web_search(query: str, num_results: int = 10) -> str:
+    """DuckDuckGo 网络搜索工具。"""
+    engine = DDGSSearchEngine()
+    return engine.run(query, num_results)
+
+# 注册工具时显式传入 args_schema
+web_search_tool = StructuredTool.from_function(
+    func=web_search,
+    name="web_search",
+    description="Perform a web search using DuckDuckGo",
+    args_schema=WebSearchInput, 
+)
+
 class OpenRouterSampler(SamplerBase):
     def __init__(self):
         self.model = ChatOpenAI(
@@ -92,7 +158,7 @@ class OpenRouterSampler(SamplerBase):
         # self.checkpointer = InMemorySaver()
         self.agent = create_react_agent(
             model=self.model,
-            tools=[],
+            tools=[web_search],
             prompt=SYSTEM_PROMPT,
         )
         if hasattr(self.agent, "tools"):

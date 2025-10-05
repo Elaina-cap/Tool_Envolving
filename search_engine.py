@@ -1,4 +1,4 @@
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Any
 import requests
 from bs4 import BeautifulSoup
 from pydantic import BaseModel, Field
@@ -183,9 +183,9 @@ class BingSearchEngine(WebSearchEngine):
 
 
 
-from duckduckgo_search import DDGS
+from ddgs import DDGS
 
-class DuckDuckGoSearchEngine(WebSearchEngine):
+class DDGSSearchEngine(WebSearchEngine):
     def perform_search(
         self, query: str, num_results: int = 10, *args, **kwargs
     ) -> List[SearchItem]:
@@ -194,8 +194,7 @@ class DuckDuckGoSearchEngine(WebSearchEngine):
 
         Returns results formatted according to SearchItem model.
         """
-        raw_results = DDGS().text(query, max_results=num_results)
-
+        raw_results = list(DDGS().text(query, max_results=num_results))
         results = []
         for i, item in enumerate(raw_results):
             if isinstance(item, str):
@@ -237,11 +236,139 @@ class DuckDuckGoSearchEngine(WebSearchEngine):
         return results
 
     def run(self, query: str, num_results: int = 10) -> str:
+        print("hahahahahahahahahahahahahahahahahahahahahahahahaha")
         results = self.perform_search(query,num_results)
-        if not results:
-            return "No results found."
-        summary = "\n".join([f"{i+1}. {r.title}\n{r.url}\n{r.description}\n" for i, r in enumerate(results)])
-        return f"Top {len(results)} Bing results for '{query}':\n" + summary
+        # if not results:
+        #     return "No results found."
+        results = [{"title":r.title,"url":r.url,"description":r.description}for r in results]
+        return results
+        # if not results:
+        #     return "No results found."
+        # summary = "\n".join([f"{i+1}. {r.title}\n{r.url}\n{r.description}\n" for i, r in enumerate(results)])
+        # return f"Top {len(results)} DDGS results for '{query}':\n" + summary
 
-my_search=DuckDuckGoSearchEngine()
-print(my_search.run("Tsinghua university"))
+
+
+
+import asyncio
+import requests
+import time
+
+
+class GoogleSearchEngine(WebSearchEngine):
+    
+    async def _search_with_google(self, query: str, max_links_per_query: int=100) -> List[str]:
+        """Performs a web search using the Google Custom Search API and returns a list of URLs."""
+
+        api_key = "AIzaSyDbFzATgCgaY4koEh5d9sDGPj-ihh5XQeM" 
+        cse_id = "b2dc2984b77a24d20"
+        print(f"api_key: {api_key}, cse_id: {cse_id}")
+
+        if not api_key or not cse_id:
+            print("Google Custom Search API key or CSE ID is not configured. Please set them in your config file.")
+            return []
+
+        # Google Custom Search API endpoint
+        base_url = "https://www.googleapis.com/customsearch/v1"
+
+        # Truncate the query to avoid errors
+        truncated_query = query[:100]
+        params = {
+            "key": api_key,
+            "cx": cse_id,
+            "q": truncated_query,
+            "num": min(max_links_per_query, 10)  # Google Custom Search allows max 10 results per request
+        }
+
+        retry_count = 0
+        links = []
+        while retry_count < 3:
+            try:
+                response = requests.get(
+                    base_url,
+                    params=params,
+                    timeout=30,
+                )
+                if response.status_code != 200:
+                    print(
+                        f"Google Custom Search API returned status code {response.status_code}. "
+                        f"Response: {response.text}"
+                    )
+                    time.sleep(0.5)
+                    retry_count += 1
+                else:
+                    data = response.json()
+                    results = data.get("items", [])
+                    links = [item.get("link") for item in results if item.get("link")]
+                    print(f"Google search found {len(links)} links.")
+                    break
+            except requests.exceptions.RequestException as e:
+                print(f"Google Custom Search API request failed: {e}")
+                time.sleep(0.5)
+                retry_count += 1
+        return links
+
+
+    async def _get_section_search_content(self, search_query: str, num_results: int) -> List[Dict[str, Any]]:
+        """Fetches content from the web based on a search query."""
+        print(f"Searching for: '{search_query}'")
+
+        links = await self._search_with_google(search_query, max_links_per_query=num_results)
+        if not links:
+            print(f"No links found for '{search_query}'.")
+            return []
+
+        # Extract content from links
+        collected_content = []
+        # extraction_tasks = [extract_main_content(link) for link in links]
+        extraction_tasks = links
+        extracted_contents = await asyncio.gather(*extraction_tasks, return_exceptions=True)
+
+        for link, content in zip(links, extracted_contents):
+            if isinstance(content, str) and content:
+                collected_content.append({"url": link, "content": content})
+                print(f"Successfully extracted content from {link}.")
+            elif isinstance(content, dict) and content:
+                collected_content.append({"url": link, "content": content.get("markdown_content")})
+                print(f"Successfully extracted structured content from {link}.")
+            elif isinstance(content, list) and content:
+                for item in content:
+                    collected_content.append({"url": link, "content": item.get("markdown_content")})
+                print(f"Successfully extracted multiple sections from {link}.")
+            else:
+                print(f"Failed to extract valid content from {link}.")
+
+        return collected_content
+
+    async def perform_search(
+        self, query: str, num_results: int = 10, *args, **kwargs
+    ) -> List[SearchItem]:
+        """
+        Google search engine.
+
+        Returns results formatted according to SearchItem model.
+        """
+        # raw_results = search(query, num_results=num_results, advanced=True, api_key=config.google_search.api_key, cse_id=config.google_search.cse_id)
+        raw_results = await self._get_section_search_content(query, num_results)
+        results = []
+        for i, item in enumerate(raw_results):
+            if isinstance(item, str):
+                # If it's just a URL
+                results.append(
+                    {"title": f"Google Result {i+1}", "url": item, "description": ""}
+                )
+            else:
+                results.append(
+                    SearchItem(
+                        title=item['content'], url=item['url'], description=item['content']
+                    )
+                )
+
+        print(results)
+
+# if __name__ == '__main__':
+#     asyncio.run(GoogleSearchEngine().perform_search("What is the capital of France?", num_results=5))
+
+my_search=DDGSSearchEngine()
+with open('./result','w',encoding='utf-8') as f:
+    f.write(str(my_search.run("Elaina")))
