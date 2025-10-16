@@ -367,8 +367,8 @@ class GoogleSearchEngine(WebSearchEngine):
 
         print(results)
 
-# if __name__ == '__main__':
-#     asyncio.run(GoogleSearchEngine().perform_search("What is the capital of France?", num_results=5))
+if __name__ == '__main__':
+    asyncio.run(GoogleSearchEngine().perform_search("What is the capital of France?", num_results=5))
 
 # my_search=DDGSSearchEngine()
 # with open('./search_result','w',encoding='utf-8') as f:
