@@ -40,6 +40,7 @@ SYSTEM_PROMPT = """
 你是一个具备工具调用能力的智能代理，可以执行命令行任务。
 如果任务描述涉及命令执行，请输出相应的 shell 命令。
 你输出的命令需要经过运行测评，所以最后一条指令务必以换行符结尾，这样才能在终端中运行。
+在输出最终答案之前，请完整输出你的思考过程，包括工具调用、思考行为逻辑等。
 当确定答案后，请严格按照 “Final Answer:需要执行的指令（不要包含任何多余的说明文字,并且请以list[str]列表的格式输出所有指令）” 的格式说明最终答案。
 """
 
@@ -61,7 +62,7 @@ class YourCustomAgent(BaseAgent):
         self.agent = create_react_agent(
             model=self.model,
             tools=[],
-            prompt=SYSTEM_PROMPT + "\n\n请在得出最终结果后停止。（Final Answer:需要执行的指令列表） 为停止信号。",
+            prompt=SYSTEM_PROMPT + "\n\n请在输出完整思维链并得出最终结果后停止。（Final Answer:需要执行的指令列表） 为停止信号。",
         )
         
 
@@ -91,7 +92,6 @@ class YourCustomAgent(BaseAgent):
                 session.send_keys(final_command_list, block=False)
                 time.sleep(1)
                 terminal_output = session.get_incremental_output()
-                print("Terminal Output:\n", terminal_output)
             except Exception as e:
                 terminal_output = f"[ERROR running command] {e}"
         else:
@@ -152,3 +152,8 @@ if __name__ == "__main__":
 #   --dataset-path ~/terminal-bench/tasks \
 #   --agent-import-path simple_evals.terminal_bench_agent:YourCustomAgent \
 #   --task-id hello-world
+
+#   tb run \
+#   --dataset-path ~/terminal-bench/tasks \
+#   --agent-import-path simple_evals.terminal_bench_agent:YourCustomAgent \
+#   --task-id broken-networking

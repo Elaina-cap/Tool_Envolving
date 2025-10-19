@@ -10,141 +10,32 @@ from langchain.tools import StructuredTool
 from pydantic import BaseModel, Field
 
 SYSTEM_PROMPT='''
-你是一个 ReAct 风格的推理代理（agent），可以使用我为你提供提供的工具来回答用户问题，并且只可以用我提供的工具，不要自行调用其他外部工具，如果我未向你提供工具，你可以使用默认的web_search
-**不要**输出内部的逐字思维过程（chain-of-thought）。你必须以对外可见、结构化的形式记录你的**行动与工具使用情况**，并给出**简洁的公开推理摘要**和最终答案。
-
-严格遵循下面格式输出：
-
-1) 【Action Log — 行动日志】（按时间顺序编号）
-   每个行动项必须包含：
-   - Action #: 从 1 开始的序号
-   - Action Type: 取值之一：TOOL_CALL / TOOL_RESULT / COMPUTE / ANSWER
-   - Tool: 使用的工具名（若非工具调用则写 "-"），只可以用我向你提供的工具，不要自行调用外部工具
-   - Input: 传入工具或执行的具体输入（或简短说明）
-   - Output / Observation: 工具返回或本次操作的结果（若无则写 "-"）
-
-   示例条目：
-   1) Action #: 1
-      Action Type: TOOL_CALL
-      Tool: web_search
-      Input: "MMA event loser 14 significant strikes 83 attempted nickname swordsman"
-      Output / Observation: "搜索结果摘要：...（给出工具返回的原文摘要或片段）"
-
-   对工具返回的每个重要片段，必须把原文或精确摘要写入 Output / Observation，以便审计。
-
-2) 【Public Reasoning — 公开推理摘要】（用简短句子描述每一步“为什么”）
-   - 只写对外摘要（每条 1-2 句），不要写内部思路或逐词的链式推理。
-   - 每条要能被外部审阅者理解为什么采取了对应的行动（例如“因为需要确认比赛日期与统计数据，所以用 web_search”）。
-   - 对应 Action Log 中的关键行动请在括号里标注该 action 的序号，便于交叉核验。
-
-   示例：
-   - Step 1: 为确认选手绰号含义，检索相关比赛与选手简介（参见 Action #1 的 web_search）。  
-   - Step 2: 基于工具返回的赛事统计摘要，筛选满足“14/83、0 次摔跤”条件的赛事（参见 Action #2 的 search result）。
-
-3) 【Sources / Evidence — 证据/来源】  
-   - 列出所有引用的工具输出、URL 或文档片段，并标注对应 Action #（例如：Action #1 -> https://example.com/page）。  
-   - 如果工具输出为原文片段，请直接粘贴短片段（≤200 字），并注明来源 URL。
-
-4) 【Final Answer — 最终答案（必须包含三行，严格格式）】
-   Explanation: {在此处写 2-4 句的、非内部的、可审计的推理总结 — 不要写逐字思考}
-   Exact Answer: {简洁的、可核验的最终答案（事件名 / 日期 / 参照字段等）}
-   Confidence: {0% - 100% 的置信度估计，若不确定则给范围并说明原因}
-
-5) 若无法确认或证据不足，请明确写：
-   - "Unable to confidently answer — missing evidence" 并列出缺失的关键证据项（例如：确切比赛报告、官方统计页面等），以及下一步应检索的具体查询字符串（便于自动/人工跟进）。
-
-补充规则（必须遵守）：
-- 绝不编造来源或伪造数据；如引用来自工具的内容，请在 Action Log 中记录对应工具的完整输出片段或链接。
-- 公开推理摘要应简洁且可验证（可用 1-3 句说明每个重要决策点）。
-- 如果调用多个工具，必须在 Action Log 中记录它们的输入与输出（不能只写“使用了 web_search”而不写具体输入/输出）。
-- 输出长度：Action Log / Evidence 可较长，但 Public Reasoning 与 Final Answer 要简洁（每条 ≤ 2 句）。
+- 你是一个 ReAct 风格的推理代理（agent），可以使用我为你提供的工具来回答用户问题，并且只可以用我提供的工具，不要自行调用其他外部工具以及你自带的默认工具，
+- 请输出完整的思维链，包括思考过程、工具调用等。
+- 如果调用工具，必须在思维链中记录选用该工具的原因以及它们的输入与输出（不能只写“使用了web_search”而不写具体输入/输出）。
+- 在每次获得搜索结果后，必须评估：这些新信息是否足够回答用户的原始问题？如果答案已经明确，或者信息已经足够进行推断，**立即停止搜索**。
+- 不要用相似的关键词反复搜索。如果连续两次搜索都没有获得有价值的新信息，说明该方向的信息可能已经穷尽，**必须停止搜索**并基于已有信息作答。
+- 不要调用同一工具多于5次。如果已经调用了5次该工具，说明该工具可能无法提供更多有价值的信息，**必须停止使用该工具**并基于已有信息作答。
 - 最后的三行（Explanation / Exact Answer / Confidence）**必须**精确按照格式输出，便于下游 grader 解析。
-
-
-示例（简短）输出片段（仅示例格式）：
-Action Log:
-1) Action #:1
-   Action Type: TOOL_CALL
-   Tool: web_search_tool
-   Input: "MMA event loser 14 significant strikes 83 attempted nickname swordsman"
-   Output / Observation: "Result A: http://... 'Fighter X (nickname Swordsman) lost at Event Y; stats: 14/83, 0 TD'"
-
-Public Reasoning:
-- Step 1: 查询绰号与统计，以定位可能的比赛（参见 Action #1）。
-- Step 2: 验证比赛日期与裁判记录（参见 Action #2 的裁判页面）。
-
-Sources / Evidence:
-- Action #1 -> http://... (摘录: '14 significant strikes of 83 attempted...')
-
-Final Answer:
-Explanation: 基于 web_search 的比赛记录与官方统计页面（见 Sources）匹配题目所有条件，因此答案定位为 Event Y。
-Exact Answer: Event Y
-Confidence: 85%
 '''
 
 from langchain.tools import tool
-from .search_engine import DDGSSearchEngine
-# @tool("web_search", return_direct=False)
-# def web_search(query: str, num_results: int = 10) -> str:
-#     """DuckDuckGo 网络搜索工具。"""
-#     schema={
-#         "name":"web_search",
-#         "description" :"a web search tool",
-#         "parameters": {
-#             "type": "object",
-#             "properties": {
-#                 "query": {
-#                     "type": "string",
-#                     "description": "The search query to look up on the web."
-#                 },
-#                 "num_results": {
-#                     "type": "integer",
-#                     "description": "Number of search results to retrieve (default 10).",
-#                     "default": 10,
-#                 }
-#             },
-#             "required": ["query"]
-#         },
-#         "output": {
-#             "type": "object",
-#             "properties": {
-#                 "results": {
-#                     "type": "array",
-#                     "description": "A list of search results (each containing title, url, and snippet).",
-#                     "items": {
-#                         "type": "object",
-#                         "properties": {
-#                             "title": {"type": "string", "description": "Title of the web page."},
-#                             "url": {"type": "string", "description": "Link to the web page."},
-#                             "description": {"type": "string", "description": "Short text snippet or summary."}
-#                         }
-#                     }
-#                 },
-#             }
-#         }
-#     }
-#     try:
-#         searcher = DDGSSearchEngine()
-#         return searcher.run(query,num_results)
-#     except Exception as e:
-#         return f"[web_search error] {e}"
-
-
+from .search_engine import GoogleSearchEngine
 
 class WebSearchInput(BaseModel):
     query: str = Field(description="The search query to look up on the web.")
     num_results: int = Field(default=10, description="Number of search results to retrieve.")
 
 def web_search(query: str, num_results: int = 10) -> str:
-    """DuckDuckGo 网络搜索工具。"""
-    engine = DDGSSearchEngine()
+    """Google网络搜索工具。"""
+    engine = GoogleSearchEngine()
     return engine.run(query, num_results)
 
 # 注册工具时显式传入 args_schema
 web_search_tool = StructuredTool.from_function(
     func=web_search,
     name="web_search_tool",
-    description="Perform a web search using DuckDuckGo",
+    description="Perform a web search using Google",
     args_schema=WebSearchInput, 
 )
 
@@ -158,7 +49,7 @@ class OpenRouterSampler(SamplerBase):
         # self.checkpointer = InMemorySaver()
         self.agent = create_react_agent(
             model=self.model,
-            tools=[],
+            tools=[web_search_tool],
             prompt=SYSTEM_PROMPT,
         )
         # self.write_lock = threading.Lock()
@@ -227,7 +118,7 @@ class OpenRouterSampler(SamplerBase):
 
 class OpenRouterGrader(SamplerBase):
     def __init__(self, api_key=None, model="z-ai/glm-4.5"):
-        self.api_key = api_key or os.environ.get("ZHIPU_API_KEY")
+        self.api_key = api_key or ZHIPU_API_KEY
         if not self.api_key:
             raise ValueError("Missing ZHIPU_API_KEY")
         self.model = model
@@ -262,8 +153,6 @@ class OpenRouterGrader(SamplerBase):
         with open('./result', 'a', encoding='utf-8') as f:
             f.write("----------------------------------------------------------\n")
             f.write("Grade\n")
-            f.write("----------------------------------------------------------\n")
-            f.write("Messages:\n" + str(messages) + "\n")
             f.write("----------------------------------------------------------\n")
             f.write("Response:\n" + text + "\n")
             f.write("----------------------------------------------------------\n\n")

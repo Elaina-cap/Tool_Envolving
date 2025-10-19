@@ -250,20 +250,20 @@ class DDGSSearchEngine(WebSearchEngine):
 
 
 
-
+import os
 import asyncio
 import requests
 import time
-
+import aiohttp
 
 class GoogleSearchEngine(WebSearchEngine):
     
+    semaphore: asyncio.Semaphore = Field(default_factory=lambda: asyncio.Semaphore(3))
+
     async def _search_with_google(self, query: str, max_links_per_query: int=100) -> List[str]:
         """Performs a web search using the Google Custom Search API and returns a list of URLs."""
-
-        api_key = "AIzaSyDbFzATgCgaY4koEh5d9sDGPj-ihh5XQeM" 
-        cse_id = "b2dc2984b77a24d20"
-        print(f"api_key: {api_key}, cse_id: {cse_id}")
+        api_key = os.environ.get("Google_search_api_key")
+        cse_id = os.environ.get("Google_search_cse_id")
 
         if not api_key or not cse_id:
             print("Google Custom Search API key or CSE ID is not configured. Please set them in your config file.")
@@ -272,12 +272,12 @@ class GoogleSearchEngine(WebSearchEngine):
         # Google Custom Search API endpoint
         base_url = "https://www.googleapis.com/customsearch/v1"
 
-        # Truncate the query to avoid errors
-        truncated_query = query[:100]
+        # # Truncate the query to avoid errors
+        # truncated_query = query[:100]
         params = {
             "key": api_key,
             "cx": cse_id,
-            "q": truncated_query,
+            "q": query,
             "num": min(max_links_per_query, 10)  # Google Custom Search allows max 10 results per request
         }
 
@@ -309,6 +309,33 @@ class GoogleSearchEngine(WebSearchEngine):
                 retry_count += 1
         return links
 
+    async def extract_content_with_jina(self, url: str) -> str:
+        """
+        Extracts the main readable content from a webpage using Jina AI Reader.
+        """
+        async with self.semaphore:
+            print(f"[Jina] Extracting content from {url}")
+            try:
+                # Jina Reader API端点
+                jina_reader_url = f"https://r.jina.ai/{url}"
+                async with aiohttp.ClientSession(headers=HEADERS) as session:
+                    async with session.get(jina_reader_url, timeout=20) as response:
+                        if response.status == 200:
+                            content = await response.text()
+                            clean_content = content.strip().replace("\n\n", "\n")[:2000]
+                            print(f"[OK] Jina extracted {len(clean_content)} chars from {url}")
+                            return clean_content
+                        elif response.status == 429:
+                            print(f"[WARN] Rate limited (429) for {url}. Waiting before retry...")
+                            await asyncio.sleep(5)
+                            return "" 
+                        else:
+                            print(f"[WARN] Jina failed for {url}: HTTP {response.status}")
+                            return ""
+            except Exception as e:
+                print(f"[ERROR] Jina extraction failed for {url}: {e}")
+                return ""
+
 
     async def _get_section_search_content(self, search_query: str, num_results: int) -> List[Dict[str, Any]]:
         """Fetches content from the web based on a search query."""
@@ -321,8 +348,7 @@ class GoogleSearchEngine(WebSearchEngine):
 
         # Extract content from links
         collected_content = []
-        # extraction_tasks = [extract_main_content(link) for link in links]
-        extraction_tasks = links
+        extraction_tasks = [self.extract_content_with_jina(link) for link in links]
         extracted_contents = await asyncio.gather(*extraction_tasks, return_exceptions=True)
 
         for link, content in zip(links, extracted_contents):
@@ -352,23 +378,20 @@ class GoogleSearchEngine(WebSearchEngine):
         # raw_results = search(query, num_results=num_results, advanced=True, api_key=config.google_search.api_key, cse_id=config.google_search.cse_id)
         raw_results = await self._get_section_search_content(query, num_results)
         results = []
-        for i, item in enumerate(raw_results):
-            if isinstance(item, str):
-                # If it's just a URL
-                results.append(
-                    {"title": f"Google Result {i+1}", "url": item, "description": ""}
-                )
-            else:
-                results.append(
-                    SearchItem(
-                        title=item['content'], url=item['url'], description=item['content']
-                    )
-                )
+        for item in raw_results:
+            title = item['content'][:100].replace('\n', ' ').strip()
+            results.append(SearchItem(
+                title=title,
+                url=item['url'],
+                description=item['content'].replace('\n', ' ').strip(),
+            ))
+        return results
 
-        print(results)
-
+    def run(self, query: str, num_results: int = 10):
+        return asyncio.run(self.perform_search(query,num_results))
+    
 if __name__ == '__main__':
-    asyncio.run(GoogleSearchEngine().perform_search("What is the capital of France?", num_results=5))
+    asyncio.run(GoogleSearchEngine().perform_search("the captial of France?", num_results=10))
 
 # my_search=DDGSSearchEngine()
 # with open('./search_result','w',encoding='utf-8') as f:
