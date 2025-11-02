@@ -7,6 +7,6 @@ if __name__ == "__main__":
 
     grader_model = OpenRouterGrader()
 
-    evaluator = BrowseCompEval(grader_model=grader_model, num_examples=20)
+    evaluator = BrowseCompEval(grader_model=grader_model, num_examples=1)
 
     results = evaluator(sampler)

@@ -318,6 +318,9 @@ class GoogleSearchEngine(WebSearchEngine):
             try:
                 # Jina Reader API端点
                 jina_reader_url = f"https://r.jina.ai/{url}"
+                import random
+                headers = HEADERS.copy()
+                headers["User-Agent"] = random.choice(USER_AGENTS)
                 async with aiohttp.ClientSession(headers=HEADERS) as session:
                     async with session.get(jina_reader_url, timeout=20) as response:
                         if response.status == 200:

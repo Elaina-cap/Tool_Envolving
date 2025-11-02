@@ -8,6 +8,7 @@ from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import InMemorySaver
 from langchain.tools import StructuredTool
 from pydantic import BaseModel, Field
+from langchain_core.prompts import ChatPromptTemplate
 
 SYSTEM_PROMPT='''
 - 你是一个 ReAct 风格的推理代理（agent），可以使用我为你提供的工具来回答用户问题，并且只可以用我提供的工具，不要自行调用其他外部工具以及你自带的默认工具，
@@ -41,16 +42,21 @@ web_search_tool = StructuredTool.from_function(
 
 class OpenRouterSampler(SamplerBase):
     def __init__(self):
+        # self.model = ChatOpenAI(
+        #     model="z-ai/glm-4.5",
+        #     openai_api_key = os.environ.get("ZHIPU_API_KEY"),
+        #     openai_api_base="https://openrouter.ai/api/v1",
+        # )
         self.model = ChatOpenAI(
-            model="z-ai/glm-4.5",
-            openai_api_key = os.environ.get("ZHIPU_API_KEY"),
+            model="anthropic/claude-sonnet-4.5",
+            openai_api_key = os.environ.get("CLAUDE_API_KEY"),
             openai_api_base="https://openrouter.ai/api/v1",
         )
         # self.checkpointer = InMemorySaver()
         self.agent = create_react_agent(
             model=self.model,
             tools=[web_search_tool],
-            prompt=SYSTEM_PROMPT,
+            prompt=SYSTEM_PROMPT
         )
         # self.write_lock = threading.Lock()
 
@@ -79,7 +85,7 @@ class OpenRouterSampler(SamplerBase):
         last_error = None
         for attempt in range(max_retries):
             try:
-                resp = self.agent.invoke({"messages": messages})
+                resp = self.agent.invoke({"messages": messages},config={"configurable": {"max_iterations": 6}})
                 text = self._extract_text(resp)
                 if not resp or not text.strip():
                     raise ValueError("Empty response from model")
@@ -118,7 +124,7 @@ class OpenRouterSampler(SamplerBase):
 
 class OpenRouterGrader(SamplerBase):
     def __init__(self, api_key=None, model="z-ai/glm-4.5"):
-        self.api_key = api_key or ZHIPU_API_KEY
+        self.api_key = api_key or os.environ.get("ZHIPU_API_KEY")
         if not self.api_key:
             raise ValueError("Missing ZHIPU_API_KEY")
         self.model = model
